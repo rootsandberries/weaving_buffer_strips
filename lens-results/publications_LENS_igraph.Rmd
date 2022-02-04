@@ -310,7 +310,7 @@ table(record_df_data.authors.ids$type)
 record_df_data.authors.ids %>%
     group_by(data.title, Author) %>%
     filter(type==min(type)) -> record_df_data.authors.ids
-table(record_df_data.authors.ids$type) #3463 - magid, 11 - orcid 
+table(record_df_data.authors.ids$type) #3468 - magid, 11 - orcid 
 
 #check how many authors with same name but different ids
 record_df_data.authors.ids %>%
@@ -325,7 +325,7 @@ write.csv(authors_confounded_ids, here("data", "lens_confounded_authors_manual_c
 
 dim(check_next) #134 Authors with multiple id values - further checking needed, e.g.:
 
-#exampel of cleaning these using code, one by one (think of a function to do this?)
+#example of cleaning these using code, one by one (think of a function to do this?)
 
 #View(record_df_data.authors.ids[record_df_data.authors.ids$Author == "Anderson, SH",]) #same as below
 #View(record_df_data.authors.ids[record_df_data.authors.ids$Author == as.character(check_next[1,"Author"]), ]) #publication with lens_id 144-115-592-302-602 is a duplicate (conf proceeding) of another article - remove from the authors dataset:
@@ -353,6 +353,10 @@ record_df_data.authors.aff <- record_df_data.authors %>% select(data.lens_id, da
 dim(record_df_data.authors.aff) #2968 - some articles have missing data, esp country ID 
 #names(record_df_data.authors.aff) #a tibble with unnested ids use for igraph: data.lens_id value
 table(is.na(record_df_data.authors.aff$country_code)) #missing country ID - may need to impute - try https://www.grid.ac/ Global Research Identifier Database (GRID) with name (affiliation name)
+
+#save affiliations table
+write.csv(authors_confounded_ids, here("data", "lens_affiliations_authors_manual_check.csv"))
+
 
 ####### do affiliation cleaning later
 ```
