@@ -27,6 +27,10 @@ library(expss)
 library(igraph)
 ```
 
+## Summary
+This code starts from the list of the 1019 included articles stored in **20201215_EGM_Net_all-articles_clean.csv** and runs a quwery via LENS API custom function to retrieve their detailed bibliographic information. Retrieved data is processed to remove duplicated records, resulting in 974 records with unique titles. The data is storesd as a hierarchical data object with multiple levels of nested data tables (**record_df** stored in **LENS_dataframe.RData**). Subsequent code is used to extract and flatten the selected data structures, remove redundancies and resolve conflicting information on the authors and their  countries of affiliation. Draft data summaries and collaboration plots (igraph package) are plotted.
+864 records contain lists of references represented as LENS reference ID. Out of 974 records, 859 are journal articles, 752 have DO, publication years span 1954 - 2018.
+
 ## Load data (list of articles) from a .csv file
 
 ```{r get full list of publications, eval = TRUE}
@@ -64,7 +68,7 @@ getLENSData <- function(token, query){
 
 #prepare request
 max_results <- 500 #o limit number of records per request, max currently allowed is now 500
-article_list <- dat$Title #use dat50$Titkle for testing
+article_list <- dat$Title #use dat50$Title for testing
 article_title <- article_list[1] #extract the first title from the list
 readRenviron("~/.Renviron")
 token <- Sys.getenv("LENS_TOKEN") #access token saved in the local environment
@@ -126,6 +130,7 @@ dim(record_df)
 
 length(unique(record_df$data.title)) #974 unique titles
 #View(record_df[duplicated(record_df$data.title) | duplicated(record_df$data.title, fromLast=TRUE), ]) #visual check - some records have more info than others
+
 sum(sapply(record_df$data.fields_of_study, is.null)) #number of records without fields_of_study, also likely to have other missing data
 record_df$data.has_fields_of_study <- sapply(record_df$data.fields_of_study, is.null)
 
@@ -135,6 +140,8 @@ dim(record_df) #974
 
 par(mar=c(4,4,2,2))
 hist(record_df$data.year_published, main = "Publication year")
+#min(record_df$data.year_published, na.rm = TRUE)
+#max(record_df$data.year_published, na.rm = TRUE)
 
 par(mar=c(4,15,2,2))
 barplot(sort(table(record_df$data.publication_type)), horiz=TRUE, las=1, xlab = "Count", main = "Publication type")
@@ -157,10 +164,12 @@ par(mar=c(4,5,2,2))
 barplot(table(!is.na(record_df$data.references_count)), horiz=TRUE, las=1, xlab = "Count", main = "Has references?")
 # length(unlist(record_df$data.references)) #30659 total reference LENS ids
 
-doi <- unlist(lapply(record_df$data.external_ids, function(ch) expss::vlookup('doi', ch, result_column = 'value', lookup_column = 'type'))) #extracting doi for each article
+doi <- unlist(lapply(record_df$data.external_ids, function(x) x$value[match('doi', x$type)])) #extracting doi for each article
 
 par(mar=c(4,5,2,2))
 barplot(table(!is.na(doi)), horiz=TRUE, las=1, xlab = "Count", main = "Has doi?")
+#table(!is.na(doi))[2] #752 have doi
+
 ```
 
 Extract authors data.   
@@ -169,14 +178,15 @@ Extract authors data.
 #unnest first level of lists for data.authors
 record_df_data.authors <- record_df %>% select(data.lens_id, data.title, data.publication_type, data.year_published, data.authors) %>% unnest(data.authors)
 #str(record_df_data.authors) #a tibble with some lists of data frames for ids and affiliations
+dim(record_df_data.authors) #3549 - one row for each author (but authors can have multiple IDs and affiliations - nexted in author name)
 names(record_df_data.authors)
 
 #unnest author ids from record_df_data.authors:
 record_df_data.authors.ids <- record_df_data.authors %>% select(data.lens_id, data.title, data.publication_type, data.year_published, first_name, last_name, initials, ids) %>% unnest(ids)
-dim(record_df_data.authors.ids) #4052
-#names(record_df_data.authors.ids) #a tibble with unnested ids use for igraph: data.lens_id value
+dim(record_df_data.authors.ids) #4052 - one row for each author ID
+#names(record_df_data.authors.ids) #a tibble with unnested IDs. Use for igraph: data.lens_id value
 
-record_df_data.authors.ids$Author <- paste(record_df_data.authors.ids$last_name, record_df_data.authors.ids$initials, sep=", ") #add a new column with author name made of las_name and initials
+record_df_data.authors.ids$Author <- paste(record_df_data.authors.ids$last_name, record_df_data.authors.ids$initials, sep=", ") #add a new column with author name made of last_name and initials
 
 ## check overlaps and inconsistencies:
 #record_df_data.authors.ids %>% count(Author, type, value, sort = FALSE) %>% View # some authors appear multiple times when multiple ids types are available for them (e.g. 	Aavik, T, Park, KJ, Anderson, SH) - selectively remove orcid (as less common).
@@ -197,6 +207,7 @@ value_check_df %>%
 names(value_check_df2)
 check_values <- value_check_df2$value[duplicated(value_check_df2$value)] #doi to check
 
+
 ##substitute values with correct author first name and initials:
 
 #1 
@@ -204,7 +215,7 @@ check_values <- value_check_df2$value[duplicated(value_check_df2$value)] #doi to
 #record_df_data.authors.ids[record_df_data.authors.ids$value == check_values[1], c("value", "Author", "first_name", "initials")]
 #View(record_df_data.authors.ids[record_df_data.authors.ids$last_name == "Reberg-Horton", ]) #one orcid, 3 different magid! - remove all rows with magid, make first name Chris and initials C
 record_df_data.authors.ids <- subset(record_df_data.authors.ids, last_name != "Reberg-Horton" | type != "magid")
-dim(record_df_data.authors.ids) #remove all records with magid
+dim(record_df_data.authors.ids) #remove all records with magid for this person
 record_df_data.authors.ids$first_name[record_df_data.authors.ids$value == "0000-0001-5002-106X" & record_df_data.authors.ids$last_name == "Reberg-Horton"] <- "Chris" 
 record_df_data.authors.ids$initials[record_df_data.authors.ids$value == "0000-0001-5002-106X" & record_df_data.authors.ids$Author == "Reberg-Horton, SC"] <- "C" 
 record_df_data.authors.ids$Author[record_df_data.authors.ids$value == "0000-0001-5002-106X" & record_df_data.authors.ids$Author == "Reberg-Horton, SC"] <- "Reberg-Horton, C" 
@@ -289,13 +300,8 @@ record_df_data.authors.ids$first_name[record_df_data.authors.ids$value == "0000-
 record_df_data.authors.ids$initials[record_df_data.authors.ids$value == "0000-0003-4382-7051" & record_df_data.authors.ids$Author == "Sparks, T"] <- "TH" 
 record_df_data.authors.ids$Author[record_df_data.authors.ids$value == "0000-0003-4382-7051" & record_df_data.authors.ids$Author == "Sparks, T"] <- "Sparks, TH" 
 
-# Some of these will need to be manually resolved - e.g. checking if these are really different people
-
-record_df_data.authors.ids <- subset(record_df_data.authors.ids, last_name != "Reberg-Horton" | type != "magid")
-dim(record_df_data.authors.ids) #remove all records with magid
-
-
-#check ids
+# check remaining ids:
+dim(record_df_data.authors.ids)
 table(is.na(record_df_data.authors.ids$type)) #no missing values
 table(is.na(record_df_data.authors.ids$value)) #no missing values
 table(record_df_data.authors.ids$type)
@@ -304,7 +310,7 @@ table(record_df_data.authors.ids$type)
 record_df_data.authors.ids %>%
     group_by(data.title, Author) %>%
     filter(type==min(type)) -> record_df_data.authors.ids
-table(record_df_data.authors.ids$type) #3482 - magid, 23 - orcid 
+table(record_df_data.authors.ids$type) #3468 - magid, 11 - orcid 
 
 #check how many authors with same name but different ids
 record_df_data.authors.ids %>%
@@ -312,9 +318,32 @@ record_df_data.authors.ids %>%
     summarise(count = n_distinct(value)) %>%
     filter(count > 1) -> check_next
 
-dim(check_next) #135 Authors with multiple id values - further checking needed, e.g.:
-#record_df_data.authors.ids[record_df_data.authors.ids$Author == "Anderson, SH",] #same as below
-#record_df_data.authors.ids[record_df_data.authors.ids$Author == as.character(check_next[1,"Author"]), ]
+#select subset of records where same author name has more than one id for manual checking against affiliations etc., then sort and save into a .scv file:
+authors_confounded_ids <- record_df_data.authors.ids[c(record_df_data.authors.ids$Author %in% as.character(check_next$Author)), ] 
+authors_confounded_ids <- arrange(authors_confounded_ids, Author)
+write.csv(authors_confounded_ids, here("data", "lens_confounded_authors_manual_check.csv"))
+
+dim(check_next) #134 Authors with multiple id values - further checking needed, e.g.:
+
+#example of cleaning these using code, one by one (think of a function to do this?)
+
+#View(record_df_data.authors.ids[record_df_data.authors.ids$Author == "Anderson, SH",]) #same as below
+#View(record_df_data.authors.ids[record_df_data.authors.ids$Author == as.character(check_next[1,"Author"]), ]) #publication with lens_id 144-115-592-302-602 is a duplicate (conf proceeding) of another article - remove from the authors dataset:
+record_df_data.authors.ids <- subset(record_df_data.authors.ids, data.lens_id != "144-115-592-302-602")
+record_df <- subset(record_df, data.lens_id != "144-115-592-302-602") #remove from the main dataset
+
+#check again how many authors with same name but different ids
+record_df_data.authors.ids %>%
+    group_by(Author) %>%
+    summarise(count = n_distinct(value)) %>%
+    filter(count > 1) -> check_next
+
+dim(record_df)
+dim(record_df_data.authors.ids) #remove all records with magid
+
+#View(record_df_data.authors.ids[record_df_data.authors.ids$Author == "Anderson, SH",])
+#record_df_data.authors.ids
+
 
 ####### finished cleaning ids data frame for now
 
@@ -324,6 +353,10 @@ record_df_data.authors.aff <- record_df_data.authors %>% select(data.lens_id, da
 dim(record_df_data.authors.aff) #2968 - some articles have missing data, esp country ID 
 #names(record_df_data.authors.aff) #a tibble with unnested ids use for igraph: data.lens_id value
 table(is.na(record_df_data.authors.aff$country_code)) #missing country ID - may need to impute - try https://www.grid.ac/ Global Research Identifier Database (GRID) with name (affiliation name)
+
+#save affiliations table
+write.csv(authors_confounded_ids, here("data", "lens_affiliations_authors_manual_check.csv"))
+
 
 ####### do affiliation cleaning later
 ```
@@ -418,7 +451,7 @@ plot(g1s2, layout=layout_nicely, edge.arrow.size=0, vertex.color="gold", vertex.
 #more at: https://kateto.net/netscix2016.html
 ```
 
-Co-authorship networks: a few big clusters exist - get their affiliatins and key works, based on the cluster membership.   
+Co-authorship networks: a few big clusters exist - get their affiliations and key works, based on the cluster membership.   
 
 
 
