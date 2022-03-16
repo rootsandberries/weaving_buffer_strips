@@ -111,18 +111,41 @@ outcome_by_cluster <- mydata_unique %>%
   group_by(Outcomes, cluster) %>%
   tally() %>% filter(Outcomes!="Other")
 
+#Create a separate dataset that calculates a total n for the number of studies that examined a given outcome (for second bar graph below)
+outcome_by_cluster_sum <- outcome_by_cluster %>% group_by(cluster, sum) %>% summarise(n = sum(n))
+
+#Turn cluster into factors for ordering in plot
+outcome_by_cluster <- outcome_by_cluster %>%  
+  mutate(cluster = factor(cluster, levels=c("1", "3", "4", "2")))
+
 plot <- ggplot(outcome_by_cluster[order(outcome_by_cluster$n, decreasing = T),], aes(x=cluster, y=n, fill=factor(Outcomes, levels=c("Soil Physical", "Soil Chemistry", "Pollution", "Recreation", "Social", "Human Use", "Ecosystem Functioning", "Biodiversity")))) + 
   geom_bar(position="fill", stat="identity") +
+  geom_text(outcome_by_cluster_sum, mapping=aes(x = cluster, y = n), vjust=0) +
   labs(x = "Cluster", y = "", fill = "Functional Role") +
   scale_y_continuous(labels=scales::percent) +
   theme_bw(base_size = 12) +
   theme(axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12)) +
   guides(fill = guide_legend(reverse = TRUE)) +
   theme(legend.title = element_text(size = 12), legend.text = element_text(size = 10)) +
-  #scale_fill_brewer(palette="RdYlBu")
   scale_fill_manual(values = c("Biodiversity" = "#5AAE61", "Ecosystem Functioning" = "#A6DBA0", "Human Use" = "#ABD9E9", "Social" = "#74ADD1", "Recreation" = "#4575B4", "Pollution" = "#9970AB", "Soil Chemistry" = "#C2A5CF", "Soil Physical" = "#E7D4E8"))
 
 ggsave(plot, filename = "rwbs_role_plot_api.png", width = 7, height = 5, units = "in" )
+
+#Same plot but with total n at top of bar
+plot <- ggplot() + 
+  geom_bar(outcome_by_cluster[order(outcome_by_cluster$n, decreasing = T),], mapping=aes(x=cluster, y=n, fill=factor(Outcomes, levels=c("Soil Physical", "Soil Chemistry", "Pollution", "Recreation", "Social", "Human Use", "Ecosystem Functioning", "Biodiversity"))), position="fill", stat="identity") +
+  geom_text(outcome_by_cluster_sum, mapping=aes(x = cluster, y = n, label=n), position = position_fill(vjust = 1.05), size = 5) +
+  labs(x = "Cluster", y = "", fill = "Functional Role") +
+  scale_y_continuous(labels=scales::percent) +
+  theme_bw(base_size = 12) +
+  theme(axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12), panel.grid.major = element_blank()) +
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme(legend.title = element_text(size = 12), legend.text = element_text(size = 10)) +
+  #scale_fill_brewer(palette="RdYlBu") +
+  scale_fill_manual(values = c("Biodiversity" = "#5AAE61", "Ecosystem Functioning" = "#A6DBA0", "Human Use" = "#ABD9E9", "Social" = "#74ADD1", "Recreation" = "#4575B4", "Pollution" = "#9970AB", "Soil Chemistry" = "#C2A5CF", "Soil Physical" = "#E7D4E8"))
+
+
+ggsave(plot, filename = "rwbs_role_plot_api_2.png", width = 7, height = 5, units = "in" )
 
 
 # Variable width column chart version
