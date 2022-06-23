@@ -28,7 +28,7 @@ library(igraph)
 ```
 
 ## Summary
-This code starts from the list of the 1019 included articles stored in **20201215_EGM_Net_all-articles_clean.csv** and runs a quwry via LENS API custom function to retrieve their detailed bibliographic information. Retrieved data is processed to remove duplicated records, resulting in 974 records with unique titles. Preliminary summary plots are made for 864 records contain lists of references represented as LENS reference ID. Out of 974 records, 859 are journal articles, 752 have DO, publication years span 1954 - 2018.  The data is stored as a hierarchical data object with multiple levels of nested data tables (**record_df** stored in **LENS_dataframe.RData**). Subsequent code is used to extract and flatten the selected data structures, remove redundancies and resolve conflicting information on the authors and their  countries of affiliation, a few duplicated articles are removed.    
+This code starts from the list of the 1019 included articles stored in **20201215_EGM_Net_all-articles_clean.csv** and runs a query via LENS API custom function to retrieve their detailed bibliographic information. Retrieved data is processed to remove duplicated records, resulting in 974 records with unique titles. Preliminary summary plots are made for 864 records contain lists of references represented as LENS reference ID. Out of 974 records, 859 are journal articles, 752 have DO, publication years span 1954 - 2018.  The data is stored as a hierarchical data object with multiple levels of nested data tables (**record_df** stored in **LENS_dataframe.RData**). Subsequent code is used to extract and flatten the selected data structures, remove redundancies and resolve conflicting information on the authors and their  countries of affiliation, a few duplicated articles are removed.    
 
 After this pre-processing code, **publications_LENS_igraph.Rmd** can be run to produce bibliographic (collaboration) networks.  
 
@@ -139,6 +139,48 @@ record_df$data.has_fields_of_study <- sapply(record_df$data.fields_of_study, is.
 record_df %>% arrange(data.has_fields_of_study, data.title) %>% distinct(data.title, .keep_all = TRUE) -> record_df_unique #place the records without fields_of_study at the end and remove duplicates dim(record_df_unique) #check dimensions
 record_df <- record_df_unique #reassign
 dim(record_df) #974
+
+#Remove records manually identified as duplicates, commentaries or errors:
+remove_ids <- c("135-649-556-815-160",
+"023-784-116-518-93X", 
+"083-431-696-176-966",
+"000-329-490-788-869", 
+"161-425-757-559-60X",
+"070-142-965-217-664",
+"090-581-029-835-945",
+"096-184-264-826-781",
+"061-017-051-481-03X",
+"066-806-618-413-681",
+"150-615-763-454-941",
+"006-902-184-255-332",
+"149-960-450-431-003",
+"091-975-063-830-994",
+"144-639-707-343-162",
+"031-987-261-230-852",
+"013-843-692-321-806",
+"101-679-988-502-372",
+"130-012-333-732-368",
+"093-741-681-931-769",
+"163-791-444-765-886",
+"138-218-733-523-009",
+"188-286-702-392-550",
+"144-543-953-140-129",
+"022-505-451-384-907",
+"004-596-005-981-860",
+"193-310-481-188-721",
+"122-001-509-292-033",
+"111-262-221-567-76X",
+"132-615-996-627-724",
+"162-549-401-379-959",
+"080-102-355-958-47X",
+"131-532-176-733-767",
+"137-332-135-951-858",
+"123-619-186-219-552",
+"001-177-036-344-113",
+"184-194-140-337-897",
+"007-335-182-452-066")
+record_df <- record_df[ !(record_df$data.lens_id %in% remove_ids), ]
+dim(record_df) #936
 
 par(mar=c(4,4,2,2))
 hist(record_df$data.year_published, main = "Publication year")
@@ -1030,8 +1072,8 @@ record_df_data.authors.ids$value[record_df_data.authors.ids$value == "2688966438
 #     filter(count > 1) -> check_next
 # # check_next
 
-#dim(record_df) #968 articles
-#dim(record_df_data.authors.ids) #3453 authors
+dim(record_df) #930 articles
+dim(record_df_data.authors.ids) #3419 authors
 
 write.csv(record_df_data.authors.ids, here("data", "record_df_data.authors.ids_cleaned.csv")) #save dataframe as csv
 
@@ -1044,6 +1086,7 @@ save(record_df, file = here("data", "LENS_dataframe_cleaned.RData")) #save semi-
 ## Clean affiliation info   
 
 Author information stored on this data frame is not cleaned.  
+Country codes used are 2-letter codes in the ISO-3166 alpha2 format.   
 
 Note: considered using refsplitr package, but it also requires manually reviewing and fixing difficult cases, so it is unlikely to simplify this process, given the amount of information and its format.  
 
@@ -1051,12 +1094,12 @@ Note: considered using refsplitr package, but it also requires manually reviewin
 
 #unnest  affiliations from record_df_data.authors:
 record_df_data.authors.aff <- record_df_data.authors %>% select(data.lens_id, data.title, data.publication_type, data.year_published, first_name, last_name, initials, affiliations) %>% unnest(affiliations)
-#dim(record_df_data.authors.aff) #2968 - some articles have missing data, esp country ID 
+#dim(record_df_data.authors.aff) #2968 - some articles have missing data, esp country ID in ISO-3166 alpha2
 #names(record_df_data.authors.aff) #a tibble with unnested ids use for igraph: data.lens_id value
 #View(record_df_data.authors.aff)
 #table(record_df_data.authors.aff$grid_id, useNA = "always") #780 missing
 #table(record_df_data.authors.aff$country_code, useNA = "always")
-#table(is.na(record_df_data.authors.aff$country_code)) #885 missing country ID - may need to impute - try https://www.grid.ac/ Global Research Identifier Database (GRID) with name (affiliation name)
+#table(is.na(record_df_data.authors.aff$country_code)) #885 missing country ID - may need to impute - try https://www.grid.ac/ Global Research Identifier Database (GRID) with name (affiliation name) - use ISO-3166 alpha2 (2-letter codes)
 
 ## make a subset with missing country_code data - for visual checks:
 sub_aff <- record_df_data.authors.aff[is.na(record_df_data.authors.aff$country_code), ] 
@@ -1076,47 +1119,47 @@ record_df_data.authors.aff[record_df_data.authors.aff$grid_id %in% c("grid.47519
 ## fix affiliations nr 2 
 #extract most common country names and their variants from affiliations in "name" and assign country_code (https://www.geonames.org/countries/):
 #View(record_df_data.authors.aff[grep("Poland", record_df_data.authors.aff$name), ])
-record_df_data.authors.aff[grep("UK", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("U.K.", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("U. K.", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("United Kingdom", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("Great Britain", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("Scotland", record_df_data.authors.aff$name), ]$country_code <- "UK"
+record_df_data.authors.aff[grep("UK", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("U.K.", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("U. K.", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("United Kingdom", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("Great Britain", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("Scotland", record_df_data.authors.aff$name), ]$country_code <- "GB"
 record_df_data.authors.aff[grep("USA", record_df_data.authors.aff$name), ]$country_code <- "US"
 record_df_data.authors.aff[grep("U.S.A.", record_df_data.authors.aff$name), ]$country_code <- "US"
 record_df_data.authors.aff[grep("United States", record_df_data.authors.aff$name), ]$country_code <- "US"
 record_df_data.authors.aff[grep("Netherlands", record_df_data.authors.aff$name), ]$country_code <- "NL"
-record_df_data.authors.aff[grep("Switzerland", record_df_data.authors.aff$name), ]$country_code <- "SZ"
+record_df_data.authors.aff[grep("Switzerland", record_df_data.authors.aff$name), ]$country_code <- "CH"
 record_df_data.authors.aff[grep("France", record_df_data.authors.aff$name), ]$country_code <- "FR"
 record_df_data.authors.aff[grep("Italy", record_df_data.authors.aff$name), ]$country_code <- "IT"
-record_df_data.authors.aff[grep("Germany", record_df_data.authors.aff$name), ]$country_code <- "GM"
+record_df_data.authors.aff[grep("Germany", record_df_data.authors.aff$name), ]$country_code <- "DE"
 record_df_data.authors.aff[grep("Finland", record_df_data.authors.aff$name), ]$country_code <- "FI"
-record_df_data.authors.aff[grep("Japan", record_df_data.authors.aff$name), ]$country_code <- "JA"
+record_df_data.authors.aff[grep("Japan", record_df_data.authors.aff$name), ]$country_code <- "JP"
 record_df_data.authors.aff[grep("Poland", record_df_data.authors.aff$name), ]$country_code <- "PL"
 record_df_data.authors.aff[grep("Canada", record_df_data.authors.aff$name), ]$country_code <- "CA"
 record_df_data.authors.aff[grep("Argentina", record_df_data.authors.aff$name), ]$country_code <- "AR"
 record_df_data.authors.aff[grep("Belgium", record_df_data.authors.aff$name), ]$country_code <- "BE"
-record_df_data.authors.aff[grep("Spain", record_df_data.authors.aff$name), ]$country_code <- "SP"
-record_df_data.authors.aff[grep("China", record_df_data.authors.aff$name), ]$country_code <- "CH"
-record_df_data.authors.aff[grep("Estonia", record_df_data.authors.aff$name), ]$country_code <- "EN"
+record_df_data.authors.aff[grep("Spain", record_df_data.authors.aff$name), ]$country_code <- "ES"
+record_df_data.authors.aff[grep("China", record_df_data.authors.aff$name), ]$country_code <- "CN"
+record_df_data.authors.aff[grep("Estonia", record_df_data.authors.aff$name), ]$country_code <- "EE"
 record_df_data.authors.aff[grep("Norway", record_df_data.authors.aff$name), ]$country_code <- "NO"
-record_df_data.authors.aff[grep("Sweden", record_df_data.authors.aff$name), ]$country_code <- "SW"
-record_df_data.authors.aff[grep("Denmark", record_df_data.authors.aff$name), ]$country_code <- "DA"
-record_df_data.authors.aff[grep("Austria", record_df_data.authors.aff$name), ]$country_code <- "AU"
+record_df_data.authors.aff[grep("Sweden", record_df_data.authors.aff$name), ]$country_code <- "SE"
+record_df_data.authors.aff[grep("Denmark", record_df_data.authors.aff$name), ]$country_code <- "DK"
+record_df_data.authors.aff[grep("Austria", record_df_data.authors.aff$name), ]$country_code <- "AT"
 record_df_data.authors.aff[grep("Indonesia", record_df_data.authors.aff$name), ]$country_code <- "ID"
 record_df_data.authors.aff[grep("New Zealand", record_df_data.authors.aff$name), ]$country_code <- "NZ"
-record_df_data.authors.aff[grep("Australia", record_df_data.authors.aff$name), ]$country_code <- "AS"
+record_df_data.authors.aff[grep("Australia", record_df_data.authors.aff$name), ]$country_code <- "AU"
 record_df_data.authors.aff[grep("Taiwan", record_df_data.authors.aff$name), ]$country_code <- "TW"
-record_df_data.authors.aff[grep("Slovakia", record_df_data.authors.aff$name), ]$country_code <- "LO"
+record_df_data.authors.aff[grep("Slovakia", record_df_data.authors.aff$name), ]$country_code <- "SK"
 record_df_data.authors.aff[grep("Luxembourg", record_df_data.authors.aff$name), ]$country_code <- "LU"
 
 
 ## fix affiliations nr 3   
 #For the remaining records use other information from affiliations in "name" (e.g. region, city, institution names) and use it to assign country_code (https://www.geonames.org/countries/):
-record_df_data.authors.aff[grep("British", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("Devon", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("Norfolk", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("Chinese", record_df_data.authors.aff$name), ]$country_code <- "CH"
+record_df_data.authors.aff[grep("British", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("Devon", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("Norfolk", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("Chinese", record_df_data.authors.aff$name), ]$country_code <- "CN"
 record_df_data.authors.aff[grep("Rennes", record_df_data.authors.aff$name), ]$country_code <- "FR"
 record_df_data.authors.aff[grep("Paris", record_df_data.authors.aff$name), ]$country_code <- "FR"
 record_df_data.authors.aff[grep("Lille", record_df_data.authors.aff$name), ]$country_code <- "FR"
@@ -1141,35 +1184,35 @@ record_df_data.authors.aff[grep("California", record_df_data.authors.aff$name), 
 record_df_data.authors.aff[grep("Columbia", record_df_data.authors.aff$name), ]$country_code <- "US"
 record_df_data.authors.aff[grep("Polish", record_df_data.authors.aff$name), ]$country_code <- "PL"
 record_df_data.authors.aff[grep("Lublin", record_df_data.authors.aff$name), ]$country_code <- "PL"
-record_df_data.authors.aff[grep("Hobart", record_df_data.authors.aff$name), ]$country_code <- "AS"
-record_df_data.authors.aff[grep("Monash", record_df_data.authors.aff$name), ]$country_code <- "AS"
-record_df_data.authors.aff[grep("Scottish", record_df_data.authors.aff$name), ]$country_code <- "UK"
+record_df_data.authors.aff[grep("Hobart", record_df_data.authors.aff$name), ]$country_code <- "AU"
+record_df_data.authors.aff[grep("Monash", record_df_data.authors.aff$name), ]$country_code <- "AU"
+record_df_data.authors.aff[grep("Scottish", record_df_data.authors.aff$name), ]$country_code <- "GB"
 record_df_data.authors.aff[grep("Belgorod", record_df_data.authors.aff$name), ]$country_code <- "RU"
 record_df_data.authors.aff[grep("Russian", record_df_data.authors.aff$name), ]$country_code <- "RU"
 record_df_data.authors.aff[grep("Kavala", record_df_data.authors.aff$name), ]$country_code <- "GR"
-record_df_data.authors.aff[grep("Brno", record_df_data.authors.aff$name), ]$country_code <- "EZ"
+record_df_data.authors.aff[grep("Brno", record_df_data.authors.aff$name), ]$country_code <- "CZ"
 record_df_data.authors.aff[grep("Padova", record_df_data.authors.aff$name), ]$country_code <- "IT"
-record_df_data.authors.aff[grep("La Mancha", record_df_data.authors.aff$name), ]$country_code <- "SP"
+record_df_data.authors.aff[grep("La Mancha", record_df_data.authors.aff$name), ]$country_code <- "ES"
 
 record_df_data.authors.aff[grep("Agricultural Research Center", record_df_data.authors.aff$name), ]$country_code <- "FI"
 record_df_data.authors.aff[grep("Institut national de la recherche agronomique", record_df_data.authors.aff$name), ]$country_code <- "FR"
-record_df_data.authors.aff[grep("Edward Grey Institute of Field Ornithology", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("NERC", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("Technische", record_df_data.authors.aff$name), ]$country_code <- "GM"
+record_df_data.authors.aff[grep("Edward Grey Institute of Field Ornithology", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("NERC", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("Technische", record_df_data.authors.aff$name), ]$country_code <- "DE"
 record_df_data.authors.aff[grep("Sol Agro et hydrosystème Spatialisation", record_df_data.authors.aff$name), ]$country_code <- "FR"
 record_df_data.authors.aff[grep("Southeast Watershed Research Lab", record_df_data.authors.aff$name), ]$country_code <- "US"
 record_df_data.authors.aff[grep("IRSA", record_df_data.authors.aff$name), ]$country_code <- "IT"
-record_df_data.authors.aff[grep("Hill & Mountain Research Centre", record_df_data.authors.aff$name), ]$country_code <- "UK"
+record_df_data.authors.aff[grep("Hill & Mountain Research Centre", record_df_data.authors.aff$name), ]$country_code <- "GB"
 record_df_data.authors.aff[grep("Nova Scotia Agricultural College", record_df_data.authors.aff$name), ]$country_code <- "CA"
 record_df_data.authors.aff[grep("Wellington Management Company", record_df_data.authors.aff$name), ]$country_code <- "US"
-record_df_data.authors.aff[grep("The Lodge", record_df_data.authors.aff$name), ]$country_code <- "UK"
-record_df_data.authors.aff[grep("Science and Health", record_df_data.authors.aff$name), ]$country_code <- "AS"
+record_df_data.authors.aff[grep("The Lodge", record_df_data.authors.aff$name), ]$country_code <- "GB"
+record_df_data.authors.aff[grep("Science and Health", record_df_data.authors.aff$name), ]$country_code <- "AU"
 record_df_data.authors.aff[grep("Plant and Ecological Sciences l", record_df_data.authors.aff$name), ]$country_code <- "NZ"
-record_df_data.authors.aff[grep("Cooperative Research Centre", record_df_data.authors.aff$name), ]$country_code <- "AS"
+record_df_data.authors.aff[grep("Cooperative Research Centre", record_df_data.authors.aff$name), ]$country_code <- "AU"
 record_df_data.authors.aff[grep("Plant Ecology and Nature Conservation", record_df_data.authors.aff$name), ]$country_code <- "NL"
 record_df_data.authors.aff[grep("Facultad de Ciencias Exactas y Naturales", record_df_data.authors.aff$name), ]$country_code <- "AR"
 
-##Note: only 75 left unresolved - too vague, unless going back to original papers to see whole affliation info
+##Note: only 75 left unresolved - too vague, unless going back to original papers to see whole affiliation info
 
 par(mar=c(4,18,2,2))
 barplot(sort(sort(table(record_df_data.authors.aff$country_code),decreasing = TRUE)[1:10]), horiz=TRUE, las=1, xlab = "Count", main = "Top10 affiliation countries ")

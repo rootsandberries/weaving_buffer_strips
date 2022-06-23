@@ -1,0 +1,31 @@
+"","component_nr","Centrality","country_code","Author","affiliation","N_publications","Betweenness"
+"1",1,44,"GB","Pywell, RF","NERC Centre for Ecology and Hydrology",16,11121.1
+"2",1,32,"GB","Sparks, TH","NERC Institute of Terrestrial Ecology",14,3042
+"3",1,30,"GB","Potts, SG","University of Reading",13,11665.6
+"4",1,30,"GB","Woodcock, BA","University of Reading",14,12414.2
+"5",1,26,"GB","Carvell, C","NERC Centre for Ecology and Hydrology",10,7974.4
+"6",1,25,"FR","Burel, F","Centre national de la recherche scientifique",9,12274.5
+"7",1,25,"GB","Heard, MS","NERC Centre for Ecology & Hydrology",6,2778.8
+"8",1,25,"GB","Hulmes, S","NERC Centre for Ecology and Hydrology",5,602.4
+"9",1,24,"DE","Holzschuh, A","University of Göttingen",10,4809.2
+"10",1,24,"GB","Meek, WR","NERC Centre for Ecology and Hydrology",8,3195.2
+"11",2,32,"US","Isenhart, TM","Iowa State University",14,2193
+"12",2,32,"US","Schultz, RC","Iowa State University",17,2155
+"13",2,27,"US","Helmers, MJ","Dep. of Agricultural and Biosystems EngineeringIowa State Univ.AmesIA50011",7,3788
+"14",2,19,"US","Udawatta, RP","University of Missouri",14,596.5
+"15",2,18,"US","Anderson, SH","University of Missouri",15,2696.5
+"16",2,18,"US","Sauer, TJ","Agricultural Research Service",4,2107.1
+"17",2,17,"US","Gilley, JE","University of Nebraska–Lincoln",5,2816.5
+"18",2,15,"US","Brandle, JR","University of Nebraska–Lincoln",4,2034.8
+"19",2,15,"US","Parkin, TB","United States Department of Agriculture",6,1735.4
+"20",2,14,"US","Tomer, MD","Iowa State University",4,681.7
+"21",3,41,"GB","Macdonald, DW","University of Oxford",17,1993.1
+"22",3,26,"GB","Feber, RE","Wildlife Conservation Research Unit",12,756.7
+"23",3,15,"GB","Smith, HL","University of Oxford",3,21
+"24",3,15,"NL","van Lenteren, JC","Wageningen University and Research Centre",2,1020
+"25",3,14,"GB","Johnson, PJ","University of Oxford",4,24.9
+"26",3,14,"GB","Riordan, P","University of Oxford",7,18.4
+"27",3,14,"IT","Sommaggio, D","Department of Biology ",2,1752
+"28",3,13,"GB","Manley, W","Royal Agricultural University",4,207
+"29",3,13,"IT","Marini, L","University of Padua",4,2928
+"30",3,12,"GB","Bell, JR","University of Oxford",1,6.9
