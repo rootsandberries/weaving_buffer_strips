@@ -41,7 +41,7 @@ Short desicription: Python script for constructing bibliographic coupling networ
 5. Filename: rwbs_lens_bibcouple.RMD     
 Short description: R Markdown file containing code for analysis of bibliographic coupling clusters related to functional roles, publication years, geographic location and buffer strip terminology usage. 
 
-### Plots:
+### Plots/
 Directory containing plots found in manuscript figures. See file names and paper for more information about each plot.
 
 
