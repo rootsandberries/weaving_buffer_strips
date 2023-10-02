@@ -1,0 +1,616 @@
+---
+title: "rwbs_lens_bibcouple"
+output:
+  html_document:
+    code_folding: hide
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 4
+    collapsed: FALSE
+    YAML: rmdformats::robobook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE, eval = TRUE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(igraph)
+library(tidyverse)
+library(fuzzyjoin)
+library(dplyr)
+library(Polychrome)
+library(patchwork)
+library(here)
+```
+
+## Summary
+
+This code follows **publications_LENS_preprocessing.Rmd** which processes the list of the 1019 included articles stored in **20201215_EGM_Net_all-articles_clean.csv** and runs a query via LENS API custom function to retrieve their detailed bibliographic information. The output of **publications_LENS_preprocessing.Rmd** is **LENS_dataframe_cleaned.RData** which is used in this code to build a bibliographic coupling network of papers with the package igraph. Clusters in the bibliographic coupling network are identified and indicate sub-communities within the buffer strip research. The papers in these sub-communities are further analyzed by publication year, functional role studied, geographic location and terminology usage.
+
+## Load and clean data 
+"20201215_EGM_Net_all-articles_clean.csv" file has all original 1019 articles, however, cleaned data frame from LENS has only 930 articles stored in "record_df_data.authors.ids_cleaned.csv". 
+
+```{r load and clean data for bibliographic coupling, eval = TRUE}
+load("./data/LENS_dataframe_cleaned.RData") #loads record_df data object
+
+length(unique(record_df$data.title)) #930 unique titles
+#View(record_df[duplicated(record_df$data.title) | duplicated(record_df$data.title, fromLast=TRUE), ]) #visual check - some records have more info than others
+
+#Write out full lens dataset for manual checking against original map data
+#all_found_lens <- as.data.frame(record_df) %>% select(data.lens_id, data.title)
+#write.csv(all_found_lens, "all_found_lens_api.csv")
+
+#Based on manual checking, remove records from Lens dataset that are false matches (i.e. duplicates, etc.)
+record_df_clean <- record_df %>% filter(data.lens_id != "163-791-444-765-886", data.lens_id !="135-649-556-815-160", data.lens_id != "023-784-116-518-93X", data.lens_id != "083-431-696-176-966", data.lens_id != "000-329-490-788-869", data.lens_id != "161-425-757-559-60X", data.lens_id != "070-142-965-217-664", data.lens_id != "090-581-029-835-945", data.lens_id != "096-184-264-826-781", data.lens_id != "061-017-051-481-03X", data.lens_id != "066-806-618-413-681", data.lens_id != "150-615-763-454-941", data.lens_id != "006-902-184-255-332", data.lens_id != "149-960-450-431-003", data.lens_id != "091-975-063-830-994", data.lens_id != "144-639-707-343-162", data.lens_id != "031-987-261-230-852", data.lens_id != "013-843-692-321-806", data.lens_id != "101-679-988-502-372", data.lens_id != "130-012-333-732-368", data.lens_id != "093-741-681-931-769")
+dim(record_df_clean) #930
+
+#sum(sapply(record_df$data.fields_of_study, is.null)) #number of records without fields_of_study, also likely to have other missing data
+#record_df$data.has_fields_of_study <- sapply(record_df$data.fields_of_study, is.null)
+
+sum(sapply(record_df_clean$data.references, is.null)) #88 --number of records without references for bibliographic coupling
+
+#Remove records without references and deduplicate
+record_df_clean$data.has_no_references <- sapply(record_df_clean$data.references, is.null)
+record_df_clean %>% filter(data.has_no_references==FALSE) %>% distinct(data.title, .keep_all = TRUE) -> record_df_unique
+dim(record_df_unique) #842
+
+#Check removed records
+#record_df_clean %>% filter(data.has_no_references==TRUE) -> record_df_removed
+#record_df_removed.lensid <- record_df_removed %>% select(data.lens_id, data.title)
+#write.csv(record_df_removed.lensid, "removed-due-to-noref.csv")
+
+```
+
+
+## Analysis of Functional Role by Bibliographic Coupling Cluster
+
+This section takes the original map data about functional role studied by paper and analyzes the breakdown of functional role studies for each bibliographic coupling cluster. The bibliographic coupling network and clusters were identified in Python. 
+
+## Prepare data and merge
+
+```{r merge data, eval = TRUE}
+
+#Set up dataframes
+
+myclusters <- read.csv("data/bc_clustered.csv")
+myoutcomes <- read.csv("data/13750-2018-126-MOESM6-ESM-dedup-1019-outcome.csv")
+#load("./data/LENS_dataframe_cleaned.RData") #loads record_df data object
+
+#Don't need this
+#record_df_data.bib <- record_df %>% select(data.lens_id, data.title)
+#dim(record_df_data.bib) #930
+#names(record_df_data.bib)
+
+#Merge cluster to main dataset on Lens ID
+#myclusters_sub <- myclusters %>% 
+  select(Lens.ID, cluster)
+#dim(myclusters_sub) #872
+#record_df_data.bib <- rename(record_df_data.bib, Lens.ID = data.lens_id, Title = data.title)
+#myclusters_bibx <- merge(myclusters_sub, record_df_data.bib, by=c("Lens.ID"))
+#dim(myclusters_bibx) #748
+
+#Trim whitespace and make title lowercase in both cluster and outcome datasets
+myclusters$Title <- trimws(tolower(myclusters$Title))
+myoutcomes$Title <- trimws(tolower(myoutcomes$Title))
+
+#Fuzzy join of clusters with outcome dataset on title (adjust distance until total records are found) and create dataframes of unmatched items
+cluster_outcome <- stringdist_inner_join(myclusters, myoutcomes, by = "Title", max_dist = 10, distance_col = "distance") %>% as.data.frame()
+dim(cluster_outcome) #864
+
+unmatched_myclusters <- anti_join(myclusters, cluster_outcome, by = "Lens.ID")
+dim(unmatched_myclusters) #9
+write.csv(unmatched_myclusters, "unmatched_myclusters.csv")
+
+
+#Split into multiple rows by title and outcome
+cluster_outcome_sep <- separate_rows(cluster_outcome, all_outcomes_group, sep=";")
+dim(cluster_outcome_sep) #1477
+
+#Keep only unique rows to remove duplicate outcomes
+cluster_outcome_unique <- distinct_all(cluster_outcome_sep)
+dim(cluster_outcome_unique) #1193
+
+#Group by and tally outcomes by clusters
+outcome_by_cluster <- cluster_outcome_unique %>%
+  group_by(all_outcomes_group, cluster) %>%
+  tally() %>% filter(all_outcomes_group!="Other")
+
+#Turn cluster into factors for ordering in plot
+outcome_by_cluster <- outcome_by_cluster %>%  
+  filter(cluster != 6) %>% 
+  mutate(cluster = factor(cluster, levels=c("5", "4", "3", "2", "1")))
+```
+
+## Plot bar chart of functional roles by cluster
+
+```{r plot functional roles by cluster, eval = TRUE}
+outcome_by_cluster$all_outcomes_group <- factor(outcome_by_cluster$all_outcomes_group, levels=c("Soil physical", "Soil chemistry", "Pollution", "Societal", "Human use", "Ecosystem functioning", "Biodiversity"))
+
+ggplot(outcome_by_cluster[order(outcome_by_cluster$n, decreasing = T),], aes(x=cluster, y=n, fill=all_outcomes_group)) + 
+  geom_bar(position="fill", stat="identity") +
+  labs(x = "Cluster", y = "", fill = "Functional Role") +
+  scale_y_continuous(labels=scales::percent) +
+  scale_x_discrete(position = "top") +
+  theme_bw(base_size = 12) +
+  theme(axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12)) +
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme(legend.title = element_text(size = 12), legend.text = element_text(size = 10)) +
+  scale_fill_manual(values = c("Biodiversity" = "#5AAE61", "Ecosystem functioning" = "#A6DBA0", "Human use" = "#ABD9E9", "Societal" = "#74ADD1", "Pollution" = "#9970AB", "Soil chemistry" = "#C2A5CF", "Soil physical" = "#E7D4E8")) +
+  coord_flip()
+
+ggsave(here("plots", "Fig4B_cluster_role.pdf"), width = 8, height = 5, units = "cm", dpi = 300, scale = 2)
+```
+
+## Analysis of Publication Year by Bibliographic Coupling Cluster
+
+```{r plot pub year by cluster, eval = TRUE}
+
+#Get publication year data from Lens dataset
+record_df_data.pubyear <- record_df %>% select(data.lens_id, data.year_published) %>% rename(Lens.ID = data.lens_id, pubyear = data.year_published)
+
+#Merge publication year data to clusters on Lens ID
+myclusters_pubyear <- merge(myclusters, record_df_data.pubyear, by=c("Lens.ID"))
+
+#Turn cluster into factors for ordering in plot
+myclusters_pubyear <- myclusters_pubyear %>%  
+  filter(cluster != 6) %>%
+  mutate(cluster = factor(cluster, levels=c("1", "2", "3", "4", "5")))
+
+#Fix missing publication years 
+myclusters_pubyear[56, 4] = 2010
+myclusters_pubyear[82, 4] = 2004
+myclusters_pubyear[87, 4] = 2012
+myclusters_pubyear[89, 4] = 2009
+myclusters_pubyear[183, 4] = 1997
+myclusters_pubyear[265, 4] = 2015
+myclusters_pubyear[319, 4] = 2004
+myclusters_pubyear[395, 4] = 2000
+myclusters_pubyear[420, 4] = 2010
+myclusters_pubyear[500, 4] = 2013
+myclusters_pubyear[502, 4] = 2008
+
+#Plot publication years by cluster
+pubyear_plot <- ggplot(myclusters_pubyear) + 
+  geom_line(aes(x=pubyear, y=..count..), stat="bin", binwidth=1) +
+  facet_wrap(~ cluster, ncol = 1, strip.position = "right") +
+  labs(y = "Number of Publications") +
+  scale_x_continuous(name = "Publication Year", limits=c(1960, 2020)) +
+  theme_bw()
+
+ggsave(here("plots", "Fig4A_cluster_year_b.pdf"), width = 6.5, height = 5, units = "cm", dpi = 300, scale = 2)
+```
+
+## Analysis of Geographic Location by Bibliographic Coupling Cluster
+
+```{r plot location by cluster, eval = TRUE}
+
+#Use Nation variable from myoutcomes dataframe. First add country_code column and recode countries with 10 or more occurrences to country codes.
+
+#Add country_code column
+myoutcomes <- myoutcomes %>% mutate(country_code = NA)
+
+#Recode countries with 10 or more occurrences to country codes
+myoutcomes[grep("USA", myoutcomes$Nation), ]$country_code <- "US"
+myoutcomes[grep("UK", myoutcomes$Nation), ]$country_code <- "GB"
+myoutcomes[grep("France", myoutcomes$Nation), ]$country_code <- "FR"
+myoutcomes[grep("Canada", myoutcomes$Nation), ]$country_code <- "CA"
+myoutcomes[grep("Switzerland", myoutcomes$Nation), ]$country_code <- "CH"
+myoutcomes[grep("Finland", myoutcomes$Nation), ]$country_code <- "FI"
+myoutcomes[grep("Germany", myoutcomes$Nation), ]$country_code <- "DE"
+myoutcomes[grep("Poland", myoutcomes$Nation), ]$country_code <- "PL"
+myoutcomes[grep("Italy", myoutcomes$Nation), ]$country_code <- "IT"
+myoutcomes[grep("The Netherlands", myoutcomes$Nation), ]$country_code <- "NL"
+myoutcomes[grep("New Zealand", myoutcomes$Nation), ]$country_code <- "NZ"
+myoutcomes[grep("Australia", myoutcomes$Nation), ]$country_code <- "AU"
+myoutcomes[grep("Belgium", myoutcomes$Nation), ]$country_code <- "BE"
+myoutcomes[grep("Spain", myoutcomes$Nation), ]$country_code <- "ES"
+myoutcomes[grep("Ireland", myoutcomes$Nation), ]$country_code <- "GB"
+myoutcomes[grep("Sweden", myoutcomes$Nation), ]$country_code <- "SE"
+myoutcomes[grep("Argentina", myoutcomes$Nation), ]$country_code <- "AR"
+myoutcomes[grep("Austria", myoutcomes$Nation), ]$country_code <- "AT"
+myoutcomes[grep("Brazil", myoutcomes$Nation), ]$country_code <- "BR"
+myoutcomes[grep("Chile", myoutcomes$Nation), ]$country_code <- "CL"
+myoutcomes[grep("China", myoutcomes$Nation), ]$country_code <- "CN"
+myoutcomes[grep("Colombia", myoutcomes$Nation), ]$country_code <- "CO"
+myoutcomes[grep("Czech Republic", myoutcomes$Nation), ]$country_code <- "CZ"
+myoutcomes[grep("Denmark", myoutcomes$Nation), ]$country_code <- "DK"
+myoutcomes[grep("Equador", myoutcomes$Nation), ]$country_code <- "EC"
+myoutcomes[grep("Estonia", myoutcomes$Nation), ]$country_code <- "EE"
+myoutcomes[grep("Hungary", myoutcomes$Nation), ]$country_code <- "HU"
+myoutcomes[grep("Japan", myoutcomes$Nation), ]$country_code <- "JP"
+myoutcomes[grep("Kenya", myoutcomes$Nation), ]$country_code <- "KE"
+myoutcomes[grep("Norway", myoutcomes$Nation), ]$country_code <- "NO"
+myoutcomes[grep("Romania", myoutcomes$Nation), ]$country_code <- "RO"
+myoutcomes[grep("Russia", myoutcomes$Nation), ]$country_code <- "RU"
+myoutcomes[grep("Serbia", myoutcomes$Nation), ]$country_code <- "RS"
+myoutcomes[grep("Slovakia", myoutcomes$Nation), ]$country_code <- "SK"
+myoutcomes[grep("South Africa", myoutcomes$Nation), ]$country_code <- "ZA"
+myoutcomes[grep("South Korea", myoutcomes$Nation), ]$country_code <- "KR"
+myoutcomes[grep("Sri Lanka", myoutcomes$Nation), ]$country_code <- "LK"
+myoutcomes[grep("Taiwan", myoutcomes$Nation), ]$country_code <- "TW"
+myoutcomes[grep("Turkey", myoutcomes$Nation), ]$country_code <- "TR"
+
+cluster_geog <- stringdist_inner_join(myclusters, myoutcomes, by = "Title", max_dist = 8, distance_col = "distance") %>% as.data.frame()
+dim(cluster_geog) #864
+
+#Set colors the same as in earlier figures
+country_color_mapping <- c("CH"="#d485b2", "ES"="#FF977E","FR"="#e673d3", "GB"="#b55043", "GR"="#a34179","IT"="#e62539", "NL"="#f2b8be", "PT"="#917477", "SK"="#9c3540", "BE"="#f2b8d9", "DE"="#df8461",
+"FI"="#db6917", "NO"="#e69925", "SE"="#f0b660","CZ"="#702c8c", "HU"="#91218c", "RU"="#463397","TR"="#e3a9fc", "PL"="#e8c6f7", "CA"="#96cde6","US"="#4a6aa1", "CO"="#6f340d", "JP"="#7f7e80",
+"ID"="#c1c7c1", "PH"="#2b3514", "JO"="#e8e948", "NZ"="#5fa641", "AU"="#92ae31")
+
+#Make sure cluster is a factor
+cluster_geog$cluster <- factor(cluster_geog$cluster)
+
+#Subset by cluster 1
+cluster1_country <- subset(cluster_geog, cluster==1)
+
+#Calculate proportion of each country code in this cluster
+cluster1_prop <- cluster1_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster1 <- ggplot(cluster1_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 1", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 2
+cluster2_country <- subset(cluster_geog, cluster==2)
+
+#Calculate proportion of each country code in this cluster
+cluster2_prop <- cluster2_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster2 <- ggplot(cluster2_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 2", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 3
+cluster3_country <- subset(cluster_geog, cluster==3)
+
+#Calculate proportion of each country code in this cluster
+cluster3_prop <- cluster3_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster3 <- ggplot(cluster3_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 3", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 4
+cluster4_country <- subset(cluster_geog, cluster==4)
+
+#Calculate proportion of each country code in this cluster
+cluster4_prop <- cluster4_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster4 <- ggplot(cluster4_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 4", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 5
+cluster5_country <- subset(cluster_geog, cluster==5)
+
+#Calculate proportion of each country code in this cluster
+cluster5_prop <- cluster5_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster5 <- ggplot(cluster5_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 5", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#This is from Losia's code
+## Assemble individual barplots into a single multi-panel plot:
+p_countrycluster1 / p_countrycluster2 / p_countrycluster3 / p_countrycluster4 / p_countrycluster5 +
+  plot_layout(ncol = 2, nrow = 3, widths = c(1, 1, 1)) +
+  #plot_annotation(tag_levels = "A") &
+  theme(plot.tag.position = c(0, 0.98), plot.tag = element_text(size = 11, face = "bold"))
+
+#save the figure 
+ggsave(here("plots", "Fig5_clusters_countries_bar.pdf"), width = 14, height = 12, units = "cm", dpi = 300, scale = 2)
+
+```
+
+#Analysis of term usage across bibliographic clusters
+
+```{r term usage, eval = TRUE}
+
+#Continuing with the cluster_outcome dataframe created above which has both cluster membership and extracted informated from map about buffer strip terminology
+
+#Remove duplicates from dataframe
+#myterms_unique <- distinct(cluster_outcome, Title.x, .keep_all = TRUE)
+#dim(myterms_unique) #860 (4 duplicates removed)
+
+#Rename vegetated strip term column and create new dataframe
+myterms_df <- rename(cluster_outcome, vs_terms = Vegetated.strip.description.info)
+
+#Split into multiple rows by title and term
+myterms_sep <- separate_rows(myterms_df, vs_terms, sep=", ")
+dim(myterms_sep) #1006
+
+#Trim whitespace and make lowercase
+myterms_sep$vs_terms <- trimws(tolower(myterms_sep$vs_terms))
+
+#Group by and tally terms by clusters
+terms_by_cluster <- myterms_sep %>%
+  group_by(vs_terms, cluster) %>%
+  tally()
+
+#Heatmap table of terms per cluster
+
+#Not sure if these packages are used
+library(reshape2)
+library(scales)
+
+#Keep only terms appearing more than 2 times and remove NA (i.e. remove cluster 6)
+terms_by_cluster <- terms_by_cluster %>% 
+  subset(n>2) %>% 
+  na.omit()
+
+#Convert to wide format 
+terms_wide <- terms_by_cluster %>%
+  pivot_wider(
+    names_from = cluster,  # Column containing variable names
+    values_from = n     # Column containing values
+  )
+
+#Rename cluster columns
+terms_rename <- terms_wide %>%
+  rename(
+    cluster_1 = 4,
+    cluster_3 = 2,
+    cluster_4 = 3,
+    cluster_2 = 5,
+    cluster_5 = 6
+  )
+
+#Reorder columns (may not need this)
+new_order <- c("vs_terms", "cluster_1", "cluster_4", "cluster_2", "cluster_4", "cluster_5")
+terms_rename <- terms_rename[, new_order, drop = FALSE]
+
+#Recode NAs to zero
+terms_rename[is.na(terms_rename)] <- 0
+
+#Reorder rows by first cluster values
+terms_rename <- terms_rename[order(terms_rename$cluster_1), ]
+
+
+#Get back to long format and reorder clusters for heatmap
+terms_long <- reshape2::melt(terms_rename, id.vars = "vs_terms")
+
+cluster_order <- c("cluster_1", "cluster_4", "cluster_2", "cluster_3", "cluster_5")
+terms_long$variable <- factor(terms_long$variable, levels = cluster_order)
+
+#Heatmap of terms ordered by first column
+ggplot(terms_long, aes(x = vs_terms, y = variable, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = ifelse(value == 0, "", as.character(value))), size=2.5) + #Remove appearance of "0" in cells
+  scale_fill_gradient(low = "white", high = "#808080") +
+  coord_flip() +
+  theme(panel.background=element_rect(fill="white"), 
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(vjust = 293), 
+        plot.margin = margin(20, 0, 0, 0, "pt"),
+        legend.position = "none")
+
+
+
+```
+
+
+
+
+#JUNK CODE------
+
+## Prepare data for igraph (this is now all being done in Python)
+
+You can also embed plots, for example:
+
+```{r prepare data for igraph, eval = TRUE}
+#Prepare merged dataset of Lens ID, Abstract and original map data
+record_df_data.lensid <- record_df_unique %>% select(data.lens_id, data.title, data.abstract)
+dim(record_df_data.lensid) #842
+names(record_df_data.lensid)
+sysmap_data <- read.csv("./data/13750-2018-126-MOESM6-ESM-dedup-1019-outcome.csv")
+
+#Trim whitespace and make title lowercase in both cluster and outcome datasets
+record_df_data.lensid <- rename(record_df_data.lensid, lensID = data.lens_id, Title = data.title)
+sysmap_data$Title <- trimws(tolower(sysmap_data$Title))
+record_df_data.lensid$Title <- trimws(tolower(record_df_data.lensid$Title))
+
+#Fuzzy join of original map data with lens abstract and id on title (adjust distance until total records are found)
+sysmap_lens <- stringdist_inner_join(sysmap_data, record_df_data.lensid, by = "Title", max_dist = 5,
+                                distance_col = "distance")
+dim(sysmap_lens) #839
+
+#Find non-matching items and add manually
+#These are not matching due to missing sub-titles or titles in two languages
+sysmap_lens_anti <- stringdist_anti_join(record_df_data.lensid, sysmap_data, by = "Title", max_dist = 5,
+                                     distance_col = "distance")
+dim(sysmap_lens_anti) #3
+
+#Write matching and non-matching to csv and manually append non-matching to appropriate rows
+write_csv(sysmap_lens, "sysmap.lensid.abstract_bibcouple.csv")
+write_csv(sysmap_lens_anti, "sysmap.lensid.abstract_bibcouple_nonmatch.csv")
+
+#Write to csv to check for non-matches manually
+#lensid_df <- as.data.frame(record_df_data.lensid)
+#lensid_df <- apply(lensid_df, 2, as.character)
+#write.csv(lensid_df, "test_lensid.csv")
+#write.csv(sysmap_data, "test_sysmap_data.csv")
+
+#unnest list of references
+record_df_data.refs <- record_df_clean %>% select(data.lens_id, data.title, data.publication_type, data.year_published, data.references) %>% unnest(data.references)
+dim(record_df_data.refs)
+names(record_df_data.refs)
+
+#prepare data frame for igraph
+refs_df <- data.frame(pub.id = record_df_data.refs$data.lens_id, refs = record_df_data.refs$lens_id)
+str(refs_df)
+
+# Prepare data for igraph
+refs_df %>%
+        merge(refs_df, by = "refs") %>%
+        .[.$pub.id.x < .$pub.id.y, c('pub.id.x', 'pub.id.y', 'refs')] %>%
+        count(pub.id.x, pub.id.y) -> myedgelist
+```
+
+## Create igraph object and plot in network
+
+```{r igraph network plot, eval = TRUE}
+# Convert dataframe to graph object for igraph
+igraph_lens <- graph_from_data_frame(myedgelist, directed = FALSE)
+
+# Check graph object
+E(igraph_lens)
+V(igraph_lens)
+
+# Remove isolated nodes with degree less than 2
+igraph_lens_noiso <- delete.vertices(igraph_lens, which(degree(igraph_lens)<2))
+
+# Examine removed nodes. Keep only isolated nodes and convert to dataframe.
+#igraph_lens_api_iso <- delete.vertices(igraph_lens_api, which(degree(igraph_lens_api)>3))
+#isolated_nodes_df <- data.frame(name = V(igraph_lens_api_iso)$name)
+#write_csv(isolated_nodes_df, "rwbs_bibcouple_removed-nodes.csv")
+
+# Plot bibliographic coupling network in igraph
+bibcouple_lens <- plot.igraph(igraph::simplify(igraph_lens_noiso, remove.loops = TRUE, remove.multiple = TRUE), 
+                                  vertex.size=2, edge.curved=T, edge.width = 0.5, edge.color = "light gray",
+                                  vertex.label = NA, vertex.frame.color = "black",
+                                  layout=layout_with_fr(igraph_lens_noiso))
+
+```
+
+## Identify and plot network clusters and write cluster membership file
+
+```{r plot network components, eval = TRUE}
+
+# Run community detection algorithm in igraph
+clusters_lens<- cluster_louvain(igraph_lens_noiso, weights = NULL)
+
+# Check clusters
+length(clusters_lens)
+sizes(clusters_lens)
+
+# Create membership object
+cluster_grps1 <- membership(clusters_lens)
+
+# Get vertex names
+cluster_grps2 <- cbind(V(igraph_lens_noiso)$name, clusters_lens$membership)
+
+# Plot with clusters
+
+bibcouple_lens_com <- plot(clusters_lens, igraph_lens_noiso, 
+                               vertex.label = NA,
+                               vertex.size=2,
+                               edge.width = 0.5,
+                               mark.groups = NULL,
+                               edge.color = "light gray")
+
+# Save plot to file
+
+png("rwbs_bibcouple_plot.png", 600, 600)
+par(mar = rep(0, 4))
+plot(clusters_lens_api, igraph_lens_api_noiso, 
+     vertex.label = NA,
+     vertex.size=2,
+     edge.width = 0.5,
+     mark.groups = NULL,
+     edge.color = "light gray"
+)
+dev.off()
+
+# Write cluster membership to .csv
+write.csv(cluster_grps2, file ="data/bibcouple_clusters-louv_lens.csv")
+
+```
+
+#Word Cloud visualizations for terms
+```{r plot network components, eval = TRUE}
+
+terms_1 <- subset(terms_by_cluster, cluster == 1)
+terms_2 <- subset(terms_by_cluster, cluster == 2)
+terms_3 <- subset(terms_by_cluster, cluster == 3)
+terms_4 <- subset(terms_by_cluster, cluster == 4)
+
+set.seed(1234) # for reproducibility 
+wordcloud(words = terms_1$vs_terms, freq = terms_1$n, min.freq = 1, 
+          max.words=200, random.order=FALSE, rot.per=0,            
+          colors=brewer.pal(8, "Dark2"), scale=c(3.5,0.25))
+
+set.seed(1234) # for reproducibility 
+wordcloud(words = terms_2$vs_terms, freq = terms_2$n, min.freq = 1, 
+          max.words=200, random.order=FALSE, rot.per=0,            
+          colors=brewer.pal(8, "Dark2"), scale=c(3.5,0.25))
+
+set.seed(1234) # for reproducibility 
+wordcloud(words = terms_3$vs_terms, freq = terms_3$n, min.freq = 1, 
+          max.words=200, random.order=FALSE, rot.per=0,            
+          colors=brewer.pal(8, "Dark2"), scale=c(3.5,0.25))
+
+set.seed(1234) # for reproducibility 
+wordcloud(words = terms_4$vs_terms, freq = terms_4$n, min.freq = 1, 
+          max.words=200, random.order=FALSE, rot.per=0,            
+          colors=brewer.pal(8, "Dark2"), scale=c(3.5,0.25))
+```
+
