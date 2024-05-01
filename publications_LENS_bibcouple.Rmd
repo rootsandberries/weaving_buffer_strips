@@ -1,0 +1,644 @@
+---
+title: "publications_LENS_bibcouple"
+output:
+  html_document:
+    code_folding: hide
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 4
+    collapsed: FALSE
+    YAML: rmdformats::robobook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE, eval = TRUE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(igraph)
+library(tidyverse)
+library(plyr)
+library(fuzzyjoin)
+library(Polychrome)
+library(patchwork)
+library(UpSetR)
+library(here)
+```
+
+## Summary
+
+This code follows the bibliographic coupling network construction done in Python. The output of **publications_LENS_preprocessing.Rmd** is **LENS_dataframe_cleaned.RData** which is used in this code to build a bibliographic coupling network of papers with the package igraph. Clusters in the bibliographic coupling network are identified and indicate sub-communities within the buffer strip research. The papers in these sub-communities are further analyzed by publication year, functional role studied, geographic location and terminology usage.
+
+
+
+## Analysis of Functional Role by Bibliographic Coupling Cluster
+
+This section takes the original map data about functional role studied by paper and analyzes the breakdown of functional role studies for each bibliographic coupling cluster. The bibliographic coupling network and clusters were identified in Python. 
+
+## Prepare data and merge
+
+```{r merge data, eval = TRUE}
+
+#Set up dataframes
+
+myclusters <- read.csv("data/bc_clustered.csv")
+myoutcomes <- read.csv("data/13750-2018-126-MOESM6-ESM-dedup-1019-outcome.csv")
+#load("./data/LENS_dataframe_cleaned.RData") #loads record_df data object
+
+#Merge cluster to main dataset on Lens ID
+#myclusters_sub <- myclusters %>% 
+  #select(Lens.ID, cluster)
+#dim(myclusters_sub) #872
+#record_df_data.bib <- rename(record_df_data.bib, Lens.ID = data.lens_id, Title = data.title)
+#myclusters_bibx <- merge(myclusters_sub, record_df_data.bib, by=c("Lens.ID"))
+#dim(myclusters_bibx) #748
+
+#Trim whitespace and make title lowercase in both cluster and outcome datasets
+myclusters$Title <- trimws(tolower(myclusters$Title))
+myoutcomes$Title <- trimws(tolower(myoutcomes$Title))
+
+#Fuzzy join of clusters with outcome dataset on title (adjust distance until total records are found) and create dataframes of unmatched items
+cluster_outcome <- stringdist_inner_join(myclusters, myoutcomes, by = "Title", max_dist = 10, distance_col = "distance") %>% as.data.frame()
+dim(cluster_outcome) #864
+
+unmatched_myclusters <- anti_join(myclusters, cluster_outcome, by = "Lens.ID")
+dim(unmatched_myclusters) #9
+write.csv(unmatched_myclusters, "unmatched_myclusters.csv")
+
+
+#Split into multiple rows by title and outcome
+cluster_outcome_sep <- separate_rows(cluster_outcome, all_outcomes_group, sep=";")
+dim(cluster_outcome_sep) #1477
+
+#Keep only unique rows to remove duplicate outcomes
+cluster_outcome_unique <- distinct_all(cluster_outcome_sep)
+dim(cluster_outcome_unique) #1193
+
+#Group by and tally outcomes by clusters
+outcome_by_cluster <- cluster_outcome_unique %>%
+  group_by(all_outcomes_group, cluster) %>%
+  tally() %>% filter(all_outcomes_group!="Other")
+
+#Turn cluster into factors for ordering in plot
+outcome_by_cluster <- outcome_by_cluster %>%  
+  filter(cluster != 6) %>% 
+  mutate(cluster = factor(cluster, levels=c("5", "4", "3", "2", "1")))
+```
+
+## Plot bar chart of functional roles by cluster
+
+```{r plot functional roles by cluster, eval = TRUE}
+outcome_by_cluster$all_outcomes_group <- factor(outcome_by_cluster$all_outcomes_group, levels=c("Soil physical", "Soil chemistry", "Pollution", "Societal", "Human use", "Ecosystem functioning", "Biodiversity"))
+
+p_role_clusters <- ggplot(outcome_by_cluster[order(outcome_by_cluster$n, decreasing = T),], aes(x=cluster, y=n, fill=all_outcomes_group)) + 
+  geom_bar(position="fill", stat="identity") +
+  labs(x = "Cluster", y = "", fill = "Functional Role") +
+  scale_y_continuous(labels=scales::percent) +
+  scale_x_discrete(position = "top") +
+  theme_bw(base_size = 12) +
+  theme(axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12)) +
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme(legend.title = element_text(size = 12), legend.text = element_text(size = 10)) +
+  scale_fill_manual(values = c("Biodiversity" = "#5AAE61", "Ecosystem functioning" = "#A6DBA0", "Human use" = "#ABD9E9", "Societal" = "#74ADD1", "Pollution" = "#9970AB", "Soil chemistry" = "#C2A5CF", "Soil physical" = "#E7D4E8")) + coord_flip()
+
+ggsave(here::here("plots", "Figure_6B.pdf"), width = 3, height = 2, units = "in", dpi = 600, scale = 2.2)
+
+```
+
+## Analysis of Publication Year by Bibliographic Coupling Cluster
+
+```{r plot pub year by cluster, eval = TRUE}
+
+#Get publication year data from Lens dataset
+record_df_data.pubyear <- record_df %>% select(data.lens_id, data.year_published) %>% dplyr::rename(Lens.ID = data.lens_id, pubyear = data.year_published)
+
+#Merge publication year data to clusters on Lens ID
+myclusters_pubyear <- merge(myclusters, record_df_data.pubyear, by=c("Lens.ID"))
+
+#Turn cluster into factors for ordering in plot
+myclusters_pubyear <- myclusters_pubyear %>%  
+  filter(cluster != 6) %>%
+  mutate(cluster = factor(cluster, levels=c("1", "2", "3", "4", "5")))
+
+#Fix missing publication years 
+myclusters_pubyear[56, 4] = 2010
+myclusters_pubyear[82, 4] = 2004
+myclusters_pubyear[87, 4] = 2012
+myclusters_pubyear[89, 4] = 2009
+myclusters_pubyear[183, 4] = 1997
+myclusters_pubyear[265, 4] = 2015
+myclusters_pubyear[319, 4] = 2004
+myclusters_pubyear[395, 4] = 2000
+myclusters_pubyear[420, 4] = 2010
+myclusters_pubyear[500, 4] = 2013
+myclusters_pubyear[502, 4] = 2008
+
+#Plot publication years by cluster
+pubyear_plot <- ggplot(myclusters_pubyear) + 
+  geom_line(aes(x=pubyear, y=..count..), stat="bin", binwidth=1) +
+  facet_wrap(~ cluster, ncol = 1, strip.position = "right") +
+  labs(y = "Number of Publications") +
+  scale_x_continuous(name = "Publication Year", limits=c(1960, 2015), breaks = seq(1960, 2015, by = 5)) +
+  theme_bw() +
+  theme(panel.grid.major.x = element_line(color = "grey90"),
+        panel.grid.minor.x = element_blank())
+
+ggsave(here::here("plots", "Figure_6A.pdf"), width = 3, height = 2.5, units = "in", dpi = 600, scale = 2.1)
+
+```
+
+## Analysis of Geographic Location by Bibliographic Coupling Cluster
+
+```{r plot location by cluster, eval = TRUE}
+
+#Use Nation variable from myoutcomes dataframe. First add country_code column and recode countries with 10 or more occurrences to country codes.
+
+#Add country_code column
+myoutcomes <- myoutcomes %>% mutate(country_code = NA)
+
+#Recode countries with 10 or more occurrences to country codes
+myoutcomes[grep("USA", myoutcomes$Nation), ]$country_code <- "US"
+myoutcomes[grep("UK", myoutcomes$Nation), ]$country_code <- "GB"
+myoutcomes[grep("France", myoutcomes$Nation), ]$country_code <- "FR"
+myoutcomes[grep("Canada", myoutcomes$Nation), ]$country_code <- "CA"
+myoutcomes[grep("Switzerland", myoutcomes$Nation), ]$country_code <- "CH"
+myoutcomes[grep("Finland", myoutcomes$Nation), ]$country_code <- "FI"
+myoutcomes[grep("Germany", myoutcomes$Nation), ]$country_code <- "DE"
+myoutcomes[grep("Poland", myoutcomes$Nation), ]$country_code <- "PL"
+myoutcomes[grep("Italy", myoutcomes$Nation), ]$country_code <- "IT"
+myoutcomes[grep("The Netherlands", myoutcomes$Nation), ]$country_code <- "NL"
+myoutcomes[grep("New Zealand", myoutcomes$Nation), ]$country_code <- "NZ"
+myoutcomes[grep("Australia", myoutcomes$Nation), ]$country_code <- "AU"
+myoutcomes[grep("Belgium", myoutcomes$Nation), ]$country_code <- "BE"
+myoutcomes[grep("Spain", myoutcomes$Nation), ]$country_code <- "ES"
+myoutcomes[grep("Ireland", myoutcomes$Nation), ]$country_code <- "GB"
+myoutcomes[grep("Sweden", myoutcomes$Nation), ]$country_code <- "SE"
+myoutcomes[grep("Argentina", myoutcomes$Nation), ]$country_code <- "AR"
+myoutcomes[grep("Austria", myoutcomes$Nation), ]$country_code <- "AT"
+myoutcomes[grep("Brazil", myoutcomes$Nation), ]$country_code <- "BR"
+myoutcomes[grep("Chile", myoutcomes$Nation), ]$country_code <- "CL"
+myoutcomes[grep("China", myoutcomes$Nation), ]$country_code <- "CN"
+myoutcomes[grep("Colombia", myoutcomes$Nation), ]$country_code <- "CO"
+myoutcomes[grep("Czech Republic", myoutcomes$Nation), ]$country_code <- "CZ"
+myoutcomes[grep("Denmark", myoutcomes$Nation), ]$country_code <- "DK"
+myoutcomes[grep("Equador", myoutcomes$Nation), ]$country_code <- "EC"
+myoutcomes[grep("Estonia", myoutcomes$Nation), ]$country_code <- "EE"
+myoutcomes[grep("Hungary", myoutcomes$Nation), ]$country_code <- "HU"
+myoutcomes[grep("Japan", myoutcomes$Nation), ]$country_code <- "JP"
+myoutcomes[grep("Kenya", myoutcomes$Nation), ]$country_code <- "KE"
+myoutcomes[grep("Norway", myoutcomes$Nation), ]$country_code <- "NO"
+myoutcomes[grep("Romania", myoutcomes$Nation), ]$country_code <- "RO"
+myoutcomes[grep("Russia", myoutcomes$Nation), ]$country_code <- "RU"
+myoutcomes[grep("Serbia", myoutcomes$Nation), ]$country_code <- "RS"
+myoutcomes[grep("Slovakia", myoutcomes$Nation), ]$country_code <- "SK"
+myoutcomes[grep("South Africa", myoutcomes$Nation), ]$country_code <- "ZA"
+myoutcomes[grep("South Korea", myoutcomes$Nation), ]$country_code <- "KR"
+myoutcomes[grep("Sri Lanka", myoutcomes$Nation), ]$country_code <- "LK"
+myoutcomes[grep("Taiwan", myoutcomes$Nation), ]$country_code <- "TW"
+myoutcomes[grep("Turkey", myoutcomes$Nation), ]$country_code <- "TR"
+
+cluster_geog <- stringdist_inner_join(myclusters, myoutcomes, by = "Title", max_dist = 8, distance_col = "distance") %>% as.data.frame()
+dim(cluster_geog) #864
+
+#Set colors the same as in earlier figures
+country_color_mapping <- c("CH"="#d485b2", "ES"="#FF977E","FR"="#e673d3", "GB"="#b55043", "GR"="#a34179","IT"="#e62539", "NL"="#f2b8be", "PT"="#917477", "SK"="#9c3540", "BE"="#f2b8d9", "DE"="#df8461",
+"FI"="#db6917", "NO"="#e69925", "SE"="#f0b660","CZ"="#702c8c", "HU"="#91218c", "RU"="#463397","TR"="#e3a9fc", "PL"="#e8c6f7", "CA"="#96cde6","US"="#4a6aa1", "CO"="#6f340d", "JP"="#7f7e80",
+"ID"="#c1c7c1", "PH"="#2b3514", "JO"="#e8e948", "NZ"="#5fa641", "AU"="#92ae31")
+
+#Make sure cluster is a factor
+cluster_geog$cluster <- factor(cluster_geog$cluster)
+
+#Subset by cluster 1
+cluster1_country <- subset(cluster_geog, cluster==1)
+
+#Calculate proportion of each country code in this cluster
+cluster1_prop <- cluster1_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster1 <- ggplot(cluster1_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 1", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 2
+cluster2_country <- subset(cluster_geog, cluster==2)
+
+#Calculate proportion of each country code in this cluster
+cluster2_prop <- cluster2_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster2 <- ggplot(cluster2_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 2", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 3
+cluster3_country <- subset(cluster_geog, cluster==3)
+
+#Calculate proportion of each country code in this cluster
+cluster3_prop <- cluster3_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster3 <- ggplot(cluster3_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 3", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 4
+cluster4_country <- subset(cluster_geog, cluster==4)
+
+#Calculate proportion of each country code in this cluster
+cluster4_prop <- cluster4_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster4 <- ggplot(cluster4_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 4", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+#Subset by cluster 5
+cluster5_country <- subset(cluster_geog, cluster==5)
+
+#Calculate proportion of each country code in this cluster
+cluster5_prop <- cluster5_country %>%
+  count(country_code) %>%
+  mutate(proportion = n / sum(n)) %>%
+  filter(proportion > 0.02) %>% 
+  na.omit(country_code)
+
+#Plot country codes as bar plot
+p_countrycluster5 <- ggplot(cluster5_prop, aes(reorder(country_code, n), y = proportion, fill=country_code)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  labs(title = "Cluster 5", 
+       x = NULL, 
+       y = "relative frequencies") +
+  theme(plot.title = element_text(lineheight = .8, face = "bold")) +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = country_color_mapping)
+
+## Assemble individual barplots into a single multi-panel plot:
+p_countrycluster1 / p_countrycluster2 / p_countrycluster3 / p_countrycluster4 / p_countrycluster5 +
+  plot_layout(ncol = 2, nrow = 3, widths = c(1, 1, 1)) +
+  #plot_annotation(tag_levels = "A") &
+  theme(plot.tag.position = c(0, 0.98), plot.tag = element_text(size = 11, face = "bold"))
+
+#save the figure 
+ggsave(here("plots", "Figure_7.pdf"), width = 7, height = 5, units = "in", dpi = 600, scale = 2)
+
+```
+
+#Analysis of term usage across bibliographic clusters
+
+```{r term usage, eval = TRUE}
+
+#Continuing with the cluster_outcome dataframe created above which has both cluster membership and extracted informated from map about buffer strip terminology
+
+#Remove duplicates from dataframe
+#myterms_unique <- distinct(cluster_outcome, Title.x, .keep_all = TRUE)
+#dim(myterms_unique) #860 (4 duplicates removed)
+
+#Rename vegetated strip term column and create new dataframe
+myterms_df <- rename(cluster_outcome, vs_terms = Vegetated.strip.description.info)
+
+#Split into multiple rows by title and term
+myterms_sep <- separate_rows(myterms_df, vs_terms, sep=", ")
+dim(myterms_sep) #1006
+
+#Trim whitespace and make lowercase
+myterms_sep$vs_terms <- trimws(tolower(myterms_sep$vs_terms))
+
+#Group by and tally terms by clusters
+terms_by_cluster <- myterms_sep %>%
+  group_by(vs_terms, cluster) %>%
+  tally()
+
+#Heatmap table of terms per cluster
+
+#Keep only terms appearing more than 2 times and remove NA (i.e. remove cluster 6)
+terms_by_cluster <- terms_by_cluster %>% 
+  subset(n>2) %>% 
+  na.omit()
+
+#Convert to wide format 
+terms_wide <- terms_by_cluster %>%
+  pivot_wider(
+    names_from = cluster,  # Column containing variable names
+    values_from = n     # Column containing values
+  )
+
+#Rename cluster columns
+terms_rename <- terms_wide %>%
+  rename(
+    cluster_1 = 4,
+    cluster_3 = 2,
+    cluster_4 = 3,
+    cluster_2 = 5,
+    cluster_5 = 6
+  )
+
+#Reorder columns 
+new_order <- c("vs_terms", "cluster_1", "cluster_4", "cluster_2", "cluster_4", "cluster_5")
+terms_rename <- terms_rename[, new_order, drop = FALSE]
+
+#Recode NAs to zero
+terms_rename[is.na(terms_rename)] <- 0
+
+#Reorder rows by first cluster values
+terms_rename <- terms_rename[order(terms_rename$cluster_1), ]
+
+
+#Get back to long format and reorder clusters for heatmap
+terms_long <- reshape2::melt(terms_rename, id.vars = "vs_terms")
+
+cluster_order <- c("cluster_1", "cluster_4", "cluster_2", "cluster_3", "cluster_5")
+
+terms_long$variable <- factor(terms_long$variable, levels = cluster_order)
+
+#Set order to order by cluster 1 values
+cluster_1 <- terms_long[terms_long$variable == 'cluster_1',]
+terms_long$vs_terms = factor(terms_long$vs_terms, levels = cluster_1$vs_terms[order(cluster_1$value)])
+
+
+#Heatmap of terms ordered by first column
+term_heatmap <- ggplot(terms_long, aes(x = vs_terms, y = variable, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = ifelse(value == 0, "", as.character(value))), size=2.5) + #Remove appearance of "0" in cells
+  scale_fill_gradient(low = "white", high = "#808080") +
+  coord_flip() +
+  theme(panel.background=element_rect(fill="white"), 
+        panel.border = element_rect(color = "black", fill = NA),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(vjust = 249), 
+        plot.margin = margin(20, 0, 0, 0, "pt"),
+        legend.position = "none")
+
+#save the figure 
+ggsave(here("plots", "Figure_8.pdf"), width = 7, height = 7, units = "in", dpi = 600, scale = 1)
+
+```
+
+
+#Author overlap
+
+```{r author overlap, eval = TRUE}
+
+load("./data/LENS_dataframe_cleaned.RData") #loads record_df data object--set of records found via Lens API
+myclusters <- read.csv("data/bc_clustered.csv")
+
+#Unnest author data
+record_df_data.authors <- record_df %>% 
+  select(data.lens_id, data.title, data.authors) %>% 
+  unnest(data.authors)
+dim(record_df_data.authors)
+names(record_df_data.authors)
+
+#Add a new column with author name made of last name and initials
+record_df_data.authors$Author <- paste(record_df_data.authors$last_name, record_df_data.authors$initials, sep=", ")
+
+#Number of unique authors in dataset
+author_total <- length(unique(record_df_data.authors$Author))
+author_total #2149
+
+#Number of authors associated with more than one paper
+author_counts <- as.data.frame(table(record_df_data.authors$Author)) %>% filter(Freq > 1) %>% nrow()
+author_counts #566
+
+#Percent of all authors associated with more than one paper
+round((author_counts/author_total*100), 2) #26.34%
+
+#Collapse Author column by ID with semi-colon separator
+authors_by_id <- ddply(record_df_data.authors, .(data.lens_id), summarise, Authors = paste(Author, collapse = ";"))
+
+#Merge Author names to cluster dataset on Lens ID
+authors_by_id <- dplyr::rename(authors_by_id, Lens.ID = data.lens_id)
+
+myclusters_authors <- merge(myclusters, authors_by_id, by=c("Lens.ID"))
+
+myclusters_authors <- subset(myclusters_authors, select = c(Authors, cluster))
+names(myclusters_authors)
+
+#Split rows on Author names and remove duplicate rows
+cluster_authors_pairs <- myclusters_authors %>% 
+  separate_rows(Authors, sep = ";") %>% 
+  distinct()
+
+#Remove rows where cluster is NA or 6 (too small a group)
+cluster_authors_pairs <- cluster_authors_pairs %>%
+  filter(!is.na(cluster) & cluster != 6)
+
+#Create new dataframe with only authors assigned to multiple clusters
+authors_multiple_groups <- cluster_authors_pairs %>%
+  group_by(Authors) %>%
+  filter(n_distinct(cluster) > 1)
+
+#Number of authors authoring papers in multiple clusters
+multicluster_authors <- n_distinct(authors_multiple_groups$Authors)
+multicluster_authors #123
+
+#Percent of multi-paper authors authoring papers in multiple clusters
+round((multicluster_authors/author_counts*100), 2) #21.73%
+
+#Find authors occurring in both of the two most distinct clusters (1 and 2)
+common_authors_12 <- cluster_authors_pairs %>%
+  group_by(Authors) %>%
+  filter(all(c(1, 2) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_12) #26
+
+#Find authors occurring in both of the two most distinct clusters (1 and 3)
+common_authors_13 <- cluster_authors_pairs %>%
+  group_by(Authors) %>%
+  filter(all(c(1, 3) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_13) #12
+
+#Find authors occurring in both clusters 1 and 4
+common_authors_14 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(1, 4) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_14) #56
+
+#Find authors occurring in both clusters 2 and 3
+common_authors_23 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(2, 3) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_23) #12
+
+#Find authors occurring in both clusters 2 and 4
+common_authors_24 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(2, 4) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_24) #17
+
+#Find authors occurring in both clusters 3 and 4
+common_authors_34 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(3, 4) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_34) #5
+
+#Find authors occurring in both clusters 1 and 5
+common_authors_15 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(1, 5) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_15) #5
+
+#Find authors occurring in both clusters 2 and 5
+common_authors_25 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(2, 5) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_25) #0
+
+#Find authors occurring in both clusters 3 and 5
+common_authors_35 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(3, 5) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_35) #9
+
+#Find authors occurring in both clusters 4 and 5
+common_authors_45 <- authors_multiple_groups %>%
+  group_by(Authors) %>%
+  filter(all(c(4, 5) %in% cluster)) %>%
+  distinct(Authors, .keep_all = TRUE)
+nrow(common_authors_45) #2
+
+#Which authors span the most groups
+common_authors_most <- cluster_authors_pairs %>%
+  group_by(Authors) %>%
+  filter(all(c(1, 2, 3, 4) %in% cluster))
+common_authors_most #Macdonald, DW
+
+
+#This is useful to see affiliations of overlapping authors in the most disparate communities
+
+#prepare affiliations data of all authors (note the Author field here was not cleaned, so might be some minor mismatches)
+
+record_df_data.authors.aff <- read.csv("data/record_df_data.authors.aff_cleaned.csv")
+
+record_df_data.authors.aff$Authors <- paste(record_df_data.authors.aff$last_name, record_df_data.authors.aff$initials, sep = ", ")
+
+#Merge affiliations to author/cluster dataframe and select needed columns
+
+merged_data <- merge(authors_multiple_groups, record_df_data.authors.aff, by = "Authors", all.x = TRUE)
+
+merged_data <- select(merged_data, Authors, cluster, name)
+
+#Create an upset plot to show overlap
+
+cluster_authors_wide <- cluster_authors_pairs %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = cluster, values_from = value, values_fill = 0)
+
+#Rename columns
+new_colnames <- c("Authors", "cluster_1", "cluster_2", "cluster_3", "cluster_4", "cluster_5")
+names(cluster_authors_wide) <- new_colnames
+names(cluster_authors_wide)
+
+#Convert values to integers
+cluster_authors_wide$cluster_1 <- as.integer(cluster_authors_wide$cluster_1)
+cluster_authors_wide$cluster_2 <- as.integer(cluster_authors_wide$cluster_2)
+cluster_authors_wide$cluster_3 <- as.integer(cluster_authors_wide$cluster_3)
+cluster_authors_wide$cluster_4 <- as.integer(cluster_authors_wide$cluster_4)
+cluster_authors_wide$cluster_5 <- as.integer(cluster_authors_wide$cluster_5)
+
+#Convert to dataframe
+cluster_authors_wide <- as.data.frame(cluster_authors_wide)
+
+#Plot upset plot
+myupset <- upset(cluster_authors_wide)
+
+
+#To look at movement over time of key authors
+#Note: Not used in manuscript
+
+#Merge cluster assignment to authors buy keep all other columns
+myclusters_authors_id <- merge(myclusters, authors_by_id, by=c("Lens.ID"), all = TRUE)
+
+#Split Authors column and filter to only key authors
+
+#Separate author columns into individual rows
+myclusters_authors_id_sep <- separate_rows(myclusters_authors_id, Authors, sep = ";") 
+
+#Select only key authors
+key_author_cluster <- myclusters_authors_id_sep %>%
+  filter(Authors %in% c("Pywell, RF", "Sparks, TH", "Potts, SG", "Woodcock, BA", "Carvell, C", "Isenhart, TM", "Schultz, RC", "Helmers, MJ", "Udawatta, RP", "Anderson, SH", "Macdonald, DW", "Feber, RE", "Smith, HL", "van Lenteren, JC", "Johnson, PJ", "Reberg-Horton, C", "Moorman, CE", "Osmond, DL", "Lowrance, R", "Burchell, MR"))
+
+#Remove rows where cluster is NA or 6 (too small a group)
+key_author_cluster <- 
+  key_author_cluster %>%
+  filter(!is.na(cluster) & cluster != 6)
+
+#Select only needed columns
+key_author_cluster_df <- subset(key_author_cluster, select = c("Publication.Year", "Authors", "cluster"))
+
+cluster_counts <- key_author_cluster_df %>%
+  group_by(Publication.Year, Authors, cluster) %>%
+  dplyr::summarise(count = n())
+
+cluster_counts$cluster <- as.factor(cluster_counts$cluster)
+
+ggplot(cluster_counts, aes(x = Publication.Year, y = count, group = cluster, color = cluster)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ Authors) +
+  labs(x = "Publication Year", y = "Count", title = "Cluster Occurrences Over Years") +
+  theme_minimal()
+
+```
+
+## Bibliographic coupling cluster analysis summary:    
+Bibliographic coupling network was generated in Python. The cluster assignments and memberships were then used to assess cluster differences related to analysis of buffer strip functional roles, geographic location of studies and term usage. Authorship overlap across clusters was assessed with an upset plot and descriptive statistics. 
