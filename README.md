@@ -12,11 +12,21 @@ Short description: R Markdown file containing code for cleaning and preprocessin
 2. Filename: publications_LENS_igraph.RMD       
 Short description: R Markdown file containing code for constructing co-authorship network in igraph and analyzing co-authorship network attributes and sub-communities.
 
-3. Filename: Insert Max's Python file
-Short desicription: Python script for constructing bibliographic coupling network and conducting topic modelling on network clusters.        
+3. Filename: publications_LENS_bibcouple.RMD     
+Short description: R Markdown file containing code for analysis of bibliographic coupling clusters related to functional roles, publication years, geographic location and buffer strip terminology usage.
 
-5. Filename: publications_LENS_bibcouple.RMD     
-Short description: R Markdown file containing code for analysis of bibliographic coupling clusters related to functional roles, publication years, geographic location and buffer strip terminology usage. 
+4. Filename: topic-model-lens.ipynb
+Short desicription: Python script for identifying topics based on studies included in the systematic map.
+
+5. Filename: topic-model.ipynb
+Short desicription: Python script for identifying topics based on studies included in the systematic map.
+
+6. Filename: bibcouple.ipynb
+Short desicription: Python script for constructing bibliographic coupling network and visualizing network clusters and topics.
+
+7. Filename: heatmaps.ipynb
+Short desicription: Python script used for generating heatmaps to examine topic models and functional roles studied in papers.
+
 
 ### Data/
 Directory containing the following data files:
@@ -41,7 +51,20 @@ Short desription: Original systematic mapping data including bibliographic data 
 7. Filename: bc_clustered.csv
 Short description: List of studies included in the bibliographic coupling network and their associated assigned cluster number.
 
+8. Filename: sysmap.lensid.abstract_bibcouple.csv
+File used to generate heatmaps with functional roles studied (variable name: all_outcomes_group).
+
+9. Filename: 20211019_rwbs_lens-export.csv
+File used to generate bibliographic coupling network with references from studies (variable name: References).
+
 ### Plots/
 Directory containing plots found in manuscript figures. See file names and paper for more information about each plot.
+
+### tm-results/
+Directory containing topic modelling features, parameters and heatmap plots.
+
+### bibcouple-results/
+Directory containing bibliographic coupling figure versions generated in bibcouple.ipynb. 
+
 
 
