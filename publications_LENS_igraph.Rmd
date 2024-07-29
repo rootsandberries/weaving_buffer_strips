@@ -880,7 +880,7 @@ ggplot(summary_df_pubcount, aes(x = all_outcomes_group, y = prop, fill = all_out
   facet_wrap(~ Authors, scales = "free_y") + labs(x = "",
        y = "% of publications addressing a functional role",
        fill = "") +
-  scale_fill_manual(values = c("Biodiversity" = "#5AAE61", "Ecosystem functioning" = "#A6DBA0", "Human use" = "#ABD9E9", "Societal" = "#74ADD1", "Pollution" = "#9970AB", "Soil chemistry" = "#C2A5CF", "Soil physical" = "#E7D4E8")) + theme_minimal() + theme(axis.text.x = element_blank()) + scale_y_continuous(limits = c(0, 100)) +  theme(legend.position = "bottom", text = element_text(size = 8))
+  scale_fill_manual(values = c("Biodiversity" = "#5AAE61", "Ecosystem functioning" = "#A6DBA0", "Human use" = "#ABD9E9", "Societal" = "#74ADD1", "Pollution" = "#9970AB", "Soil chemistry" = "#C2A5CF", "Soil physical" = "#E7D4E8")) + theme_classic() + theme(axis.text.x = element_blank(), axis.line = element_line(color="grey")) + theme(strip.background = element_rect(fill = "white", color = "white")) + scale_y_continuous(limits = c(0, 100)) +  theme(legend.position = "bottom", text = element_text(size = 8))
   
 ggsave(here("plots", "Figure_3.pdf"), width = 7, height = 6, units = "in", dpi = 600, scale = 1)
 
