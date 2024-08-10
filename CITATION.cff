@@ -1,0 +1,19 @@
+cff-version: 1.0
+message: "If you use this code or data, please cite it as below."
+authors:
+- family-names: "Sarah"
+  given-names: "Young"
+  orcid: "https://orcid.org/0000-0002-8301-5106"
+- family-names: "Malgorzata"
+  given-names: "Lagisz"
+- family-names: "Max W."
+  given-names: "Callaghan"
+- family-names: "Shinichi"
+  given-names: "Nakagawa"
+- family-names: "Neal R."
+  given-names: "Haddaway"
+title: "Code and Data for Collaboration and term usage dynamics in agricultural buffer strip research: research weaving"
+version: 1.0
+doi: 10.5281/zenodo.13293002 
+date-released: 2024-08-10
+url: "https://github.com/rootsandberries/weaving_buffer_strips"
